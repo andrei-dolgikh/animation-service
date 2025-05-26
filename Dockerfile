@@ -1,9 +1,10 @@
+# animation-service/Dockerfile
 FROM python:3.8
 
 # Установка Node.js (используем совместимую версию)
 RUN apt-get update && apt-get install -y curl
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-RUN apt-get install -y nodejs git
+RUN apt-get install -y nodejs git wget
 
 # Установка npm (указываем совместимую версию)
 RUN npm install -g npm@9
@@ -14,31 +15,40 @@ WORKDIR /app
 RUN mkdir -p /app/models
 RUN git clone https://github.com/yoyo-nb/Thin-Plate-Spline-Motion-Model /app/models/Thin-Plate-Spline-Motion-Model
 
-# Установка зависимостей Python для модели с более новыми версиями PyTorch
+# Установка зависимостей Python для модели
 WORKDIR /app/models/Thin-Plate-Spline-Motion-Model
-# Используем более новую версию PyTorch
 RUN pip install torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1
-RUN pip install pyyaml==5.4.1 scikit-image==0.17.2 imageio==2.9.0 imageio-ffmpeg==0.4.5 opencv-python==4.5.1.48 matplotlib==3.3.4 pandas==1.2.2
+RUN pip install pyyaml==5.4.1 scikit-image==0.17.2 imageio==2.9.0 imageio-ffmpeg==0.4.5 opencv-python==4.5.1.48 matplotlib==3.3.4 pandas==1.2.2 pillow==9.3.0 gdown==4.7.1
 
 # Создание директории для контрольных точек
 RUN mkdir -p checkpoints
 
-# Скачивание предобученной модели
-RUN apt-get install -y wget
-RUN wget --no-check-certificate 'https://drive.google.com/uc?export=download&id=1qf596VuU-oONb-FW8w2UjHHkTzU8SMnk' -O checkpoints/vox.pth.tar || \
-    wget --no-check-certificate 'https://github.com/yoyo-nb/Thin-Plate-Spline-Motion-Model/releases/download/v1.0.0/vox.pth.tar' -O checkpoints/vox.pth.tar
+# Используем First Order Motion Model как основную модель
+RUN mkdir -p /app/models/first-order-model
+WORKDIR /app/models/first-order-model
+RUN git clone https://github.com/AliaksandrSiarohin/first-order-model.git .
+
+# Скачиваем предобученную модель с GitHub
+RUN wget --no-check-certificate https://github.com/AliaksandrSiarohin/first-order-model/releases/download/v0.0.0/vox-cpk.pth.tar -O vox-cpk.pth.tar || \
+    echo "Could not download model, will need to be provided manually"
 
 # Скачивание видео-драйвера для анимации
 WORKDIR /app/models
-RUN wget --no-check-certificate 'https://github.com/AliaksandrSiarohin/first-order-model/raw/master/sup-mat/driving.mp4' -O driving_video.mp4
+RUN wget --no-check-certificate 'https://github.com/AliaksandrSiarohin/first-order-model/raw/master/sup-mat/driving.mp4' -O driving_video.mp4 || \
+    wget --no-check-certificate 'https://github.com/AliaksandrSiarohin/first-order-model/raw/master/sup-mat/vox-teaser.mp4' -O driving_video.mp4 || \
+    echo "Could not download driving video, will need to be provided manually"
 
-# Копирование скрипта анимации
+# Создание резервного плана: подготовка скрипта для First Order Motion Model
+WORKDIR /app/models
 COPY models/animate.py /app/models/
+COPY models/animate_fom.py /app/models/
 
-# Возвращение в корневую директорию
+# Установка зависимостей для FOM
+WORKDIR /app/models/first-order-model
+RUN pip install -r requirements.txt || pip install face-alignment==1.3.5 pyyaml==5.4.1 scikit-image==0.17.2 imageio==2.9.0 imageio-ffmpeg==0.4.5 opencv-python==4.5.1.48
+
+# Копирование исходного кода приложения
 WORKDIR /app
-
-# Копирование и установка Node.js приложения
 COPY package*.json ./
 RUN npm install
 
@@ -46,5 +56,4 @@ COPY . .
 RUN npm run build
 
 EXPOSE 3001
-
-CMD ["node", "dist/main"]
+CMD ["npm", "run", "start:prod"]
