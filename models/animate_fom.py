@@ -9,7 +9,7 @@ import imageio
 from PIL import Image
 from tqdm import tqdm
 
-sys.path.append('/app/models/first-order-model')
+sys.path.insert(0, '/app/models/first-order-model')
 from demo import load_checkpoints, make_animation
 
 parser = argparse.ArgumentParser(description='First Order Motion Model Animation')
